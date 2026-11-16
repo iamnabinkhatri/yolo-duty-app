@@ -17,6 +17,7 @@ async function api(path, options = {}) {
 function toast(message) { clearTimeout(toastTimer); $('toast').textContent = message; $('toast').hidden = false; toastTimer = setTimeout(() => $('toast').hidden = true, 4000); }
 function schedule(date) { return state.schedules.find(s => s.weekday === parseDate(date).getUTCDay()); }
 function rows(date = state.selected) { return state.duties.filter(d => d.game_date === date); }
+function currentName(duty) { return state.players.find(p => p.id === duty.player_id)?.name || duty.player_name; }
 function itemIcon(item) { return /coffee|tea/i.test(item) ? '♨' : /donut/i.test(item) ? '◎' : /water/i.test(item) ? '◈' : '◇'; }
 function initials(name) { return name.split(/\s+/).map(p => p[0]).slice(0, 2).join('').toUpperCase(); }
 function nextGame(from = today) { for (let i = 0; i < 7; i++) { const d = parseDate(from); d.setUTCDate(d.getUTCDate() + i); if (schedule(dateKey(d))) return dateKey(d); } return from; }
@@ -56,13 +57,13 @@ function renderCalendar() {
   }
   $('calendar').innerHTML = html + '</tbody></table>';
   const dates = [...new Set(state.duties.map(d => d.game_date))].sort();
-  $('month-list').innerHTML = dates.length ? dates.map(date => `<button class="list-day" data-date="${date}"><strong>${esc(dateFormat(date, { weekday: 'short', month: 'short', day: 'numeric' }))}</strong><span>${rows(date).map(d => `${esc(d.item)} — ${esc(d.player_name)}${d.status === 'done' ? ' ✓' : ''}`).join('<br>')}</span></button>`).join('') : '<p class="empty-list">No duties assigned this month.<br>Choose a game day to get started.</p>';
+  $('month-list').innerHTML = dates.length ? dates.map(date => `<button class="list-day" data-date="${date}"><strong>${esc(dateFormat(date, { weekday: 'short', month: 'short', day: 'numeric' }))}</strong><span>${rows(date).map(d => `${esc(d.item)} — ${esc(currentName(d))}${d.status === 'done' ? ' ✓' : ''}`).join('<br>')}</span></button>`).join('') : '<p class="empty-list">No duties assigned this month.<br>Choose a game day to get started.</p>';
   $('calendar').hidden = state.view !== 'calendar'; $('month-list').hidden = state.view !== 'list';
   for (const view of ['calendar', 'list']) { $(`${view}-view`).classList.toggle('active', state.view === view); $(`${view}-view`).setAttribute('aria-pressed', state.view === view); }
 }
 function renderAssignments() {
   const assigned = rows();
-  const entries = assigned.map(d => `<div class="duty-row"><span class="item-symbol" aria-hidden="true">${itemIcon(d.item)}</span><div class="duty-info"><h3>${esc(d.item)}</h3><p class="person"><span class="avatar">${esc(initials(d.player_name))}</span>${esc(d.player_name)}</p>${d.note ? `<p class="note">${esc(d.note)}</p>` : ''}<p class="status">${d.status === 'done' ? '✓ BROUGHT & SHARED' : 'ASSIGNED'}</p><div class="duty-actions"><button data-toggle="${d.id}" data-status="${d.status === 'done' ? 'assigned' : 'done'}">${d.status === 'done' ? 'Mark pending' : 'Mark brought'}</button><button data-reassign="${d.id}">Reassign</button><button class="remove" data-remove="${d.id}" aria-label="Remove ${esc(d.item)} assignment">×</button></div></div></div>`);
+  const entries = assigned.map(d => `<div class="duty-row"><span class="item-symbol" aria-hidden="true">${itemIcon(d.item)}</span><div class="duty-info"><h3>${esc(d.item)}</h3><p class="person"><span class="avatar">${esc(initials(currentName(d)))}</span>${esc(currentName(d))}</p>${d.note ? `<p class="note">${esc(d.note)}</p>` : ''}<p class="status">${d.status === 'done' ? '✓ BROUGHT & SHARED' : 'ASSIGNED'}</p><div class="duty-actions"><button data-toggle="${d.id}" data-status="${d.status === 'done' ? 'assigned' : 'done'}">${d.status === 'done' ? 'Mark pending' : 'Mark brought'}</button><button data-reassign="${d.id}">Reassign</button><button class="remove" data-remove="${d.id}" aria-label="Remove ${esc(d.item)} assignment">×</button></div></div></div>`);
   for (const item of ['Coffee', 'Donuts', 'Snacks']) if (!assigned.some(d => d.item.toLowerCase().includes(item.toLowerCase().replace(/s$/, '')))) entries.push(`<div class="duty-row unassigned-row"><span class="item-symbol" aria-hidden="true">${itemIcon(item)}</span><div class="duty-info"><h3>${item}</h3><p class="unassigned">Not assigned yet</p><div class="duty-actions"><button data-assign="${item}">＋ Assign someone</button></div></div></div>`);
   $('assignments').innerHTML = state.loading ? '<p class="empty-list">Loading game-day duties…</p>' : entries.join('');
 }
@@ -74,7 +75,7 @@ function renderRoster() {
   const selected = $('duty-player').value;
   $('duty-player').innerHTML = '<option value="">Choose a teammate…</option>' + state.players.map(p => `<option value="${esc(p.id)}">${esc(p.name)}${p.kind === 'guest' ? ' (guest)' : ''}</option>`).join('');
   $('duty-player').value = selected;
-  $('sync-status').textContent = state.roster ? `${state.roster.stale ? 'Last successful sync' : 'Synced from the original YOLO website'} · ${new Date(state.roster.syncedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. ${state.roster.guestsSynced ? 'Includes server-saved game guests from the last 90 days.' : 'Guest sync unavailable; showing published players.'} Roster refreshes every 5 minutes. Browser-only players cannot sync.` : 'Roster is unavailable. Try syncing again.';
+  $('sync-status').textContent = state.roster ? `${state.roster.stale ? 'Last successful sync' : 'Synced from the original YOLO website'} · ${new Date(state.roster.syncedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. ${state.roster.guestsSynced ? 'Includes server-saved game guests from the last 90 days.' : 'Guest sync unavailable; showing published players.'} ${state.roster.membersSynced ? 'Names come from the live members table.' : 'Names come from the published roster.'} Updates are checked every 30 seconds. Browser-only players cannot sync.` : 'Roster is unavailable. Try syncing again.';
 }
 function render() { renderNotice(); renderHeader(); renderCalendar(); renderAssignments(); }
 async function refreshDuties() {
@@ -150,5 +151,5 @@ async function init() {
 }
 init();
 setInterval(() => { if (!document.hidden && !document.querySelector('dialog[open]')) refreshDuties(); }, 30000);
-setInterval(() => { if (!document.hidden && !document.querySelector('dialog[open]')) refreshRoster().catch(() => {}); }, 300000);
+setInterval(() => { if (!document.hidden && !document.querySelector('dialog[open]')) refreshRoster().catch(() => {}); }, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !document.querySelector('dialog[open]')) { refreshDuties(); refreshRoster().catch(() => {}); } });

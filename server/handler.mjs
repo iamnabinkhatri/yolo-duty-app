@@ -53,7 +53,14 @@ export function createHandler({ env = process.env, store = createStore(env), ros
         const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit' }).formatToParts(new Date()).map(p => [p.type, p.value]));
         const month = url.searchParams.get('month') || `${parts.year}-${parts.month}`;
         const [from, to] = monthRange(month);
-        return send(200, { duties: await store.list(from, to) });
+        const duties = await store.list(from, to);
+        let names = new Map(), rosterStale = false;
+        try {
+          const current = await roster();
+          names = new Map(current.players.map(p => [p.id, p.name]));
+          rosterStale = !!current.stale;
+        } catch { rosterStale = true; }
+        return send(200, { duties: duties.map(d => ({ ...d, player_name: names.get(d.player_id) || d.player_name })), rosterStale });
       }
       if (path === '/api/duties' && req.method === 'POST') {
         const body = await readBody(req);
