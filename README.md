@@ -80,17 +80,25 @@ This repository contains no deployment token or database secret.
 ## Player synchronization
 
 - The source is https://yoloformation.vercel.app/.
-- Its core roster is currently embedded in its published JavaScript. The API
-  discovers the current script URL and parses the roster's static syntax with
-  Acorn; it **does not execute the third-party bundle**.
+- Current member names and active status come from the original Supabase
+  `members` table, the same live source used by the formation app. Source IDs
+  are preserved, so renaming a player does not break existing duty assignments.
+- The published JavaScript is parsed with Acorn (never executed) to discover
+  the public backend configuration and game schedules. Its old first-name-only
+  seed roster is used only for older source versions without a members table.
+  If live members are unavailable, a running instance keeps its last successful
+  names with an explicit stale warning instead of reverting to first names.
 - It also reads the original app's publicly accessible, server-saved guest
   records from the past 90 days using the same public anon access as that app.
   Guest records retain their source IDs, so two records with the same name can
   appear separately. The interface labels them as guests.
-- Source data is cached for five minutes per server instance. Clients poll the
-  roster every five minutes, or anyone can use **Sync roster**. Newly
-  published core players and server-saved guests then appear in the assignee
-  list. Duty lists refresh every 30 seconds and when the app returns to view.
+- Live roster results are cached for 30 seconds per server instance. Visible
+  clients check every 30 seconds and when returning to the app. This is polling,
+  not an instant websocket subscription; cache timing can add another interval.
+  **Sync roster** bypasses both the roster and bundle caches for an immediate
+  source read. The larger published bundle is otherwise cached for five minutes.
+  Newly added members, renamed players and deactivations update automatically.
+  Duty lists also refresh every 30 seconds and on return to view.
 - A player saved only in somebody's browser local storage cannot be discovered
   by another app. Saving that player to the original backend (or publishing an
   updated core roster) is needed for synchronization.
@@ -107,22 +115,18 @@ original app is adjusted for sunrise; this calendar shows its nominal published
 slot, so consult the Pickup screen for the final game time. Duties are assigned
 to dates and are unaffected by that time adjustment.
 
-Historical duty rows retain the assignee name captured at assignment time even
-if that player later disappears from the current roster.
+Stored duty rows retain the assignee name captured at assignment time. The API
+and interface show the current name by source ID when available, and fall back
+to the stored name for a player no longer present in the current roster.
 
 ## iOS and Android
 
 The updated native apps include a calendar icon in their top toolbar.
 
-1. Deploy this web app to Vercel and note its HTTPS root address.
-2. In each native app, tap **Duty calendar** and enter that same address.
-3. The native app opens the hosted calendar; its web interface consumes the
-   shared `/api/roster` and `/api/duties` endpoints on that deployment.
-4. Anyone can assign, reassign, mark brought, or remove duties without a key.
-
-The saved calendar address is per device. You can change it from the calendar
-button's menu. Home still returns to the original YOLO pickup app. No native
-rebuild is needed if you deploy to a new address; update the saved address.
+The calendar button opens **https://yolo-duty-app.vercel.app/** directly on both
+platforms. No address entry or setup menu is required. The hosted page consumes
+its shared `/api/roster` and `/api/duties` endpoints. Home returns to the original
+YOLO pickup app. The calendar remains publicly editable without an admin key.
 
 ## Checks
 

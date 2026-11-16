@@ -40,3 +40,50 @@ test('supports a future official roster JSON endpoint', async () => {
   assert.equal(result.players[0].id, 'member-new');
   resetRosterCache();
 });
+
+
+test('live members override fallback first names, preserve IDs, and sync additions and deactivations', async () => {
+  resetRosterCache();
+  let members = [{ id: 'core-alex', name: 'Alex Morgan', active: true }, { id: 'core-sam', name: 'Sam Kerr', active: false }];
+  let memberCalls = 0, assetCalls = 0, failMembers = false;
+  const fetcher = async url => {
+    if (url === 'https://yoloformation.vercel.app') return response('<script src="/assets/live.js"></script>');
+    if (String(url).includes('/rest/v1/members?')) {
+      memberCalls++;
+      if (failMembers) return response({}, 503);
+      return response(members);
+    }
+    if (String(url).includes('/rest/v1/guests?')) return response([]);
+    assetCalls++;
+    return response(source() + ';function fetchMembers(){return client.from("members").select("*")}');
+  };
+  const first = await loadRoster({ fetcher, now: 1000000000 });
+  assert.deepEqual(first.players, [{ id: 'core-alex', name: 'Alex Morgan', kind: 'member' }]);
+  assert.equal(first.membersSynced, true);
+  assert.equal(first.refreshAfterSeconds, 30);
+  assert.equal(JSON.stringify(first).includes(token), false);
+  members = [{ id: 'core-alex', name: 'Alex Updated', active: true }, { id: 'new-id', name: 'New Full Name', active: true }];
+  await loadRoster({ fetcher, now: 1000001000 });
+  assert.equal(memberCalls, 1);
+  const updated = await loadRoster({ fetcher, now: 1000030001 });
+  assert.equal(updated.players[0].id, 'core-alex');
+  assert.equal(updated.players[0].name, 'Alex Updated');
+  assert.equal(updated.players[1].name, 'New Full Name');
+  assert.equal(assetCalls, 1, 'live member refresh does not redownload the whole bundle');
+  members[0].name = 'Alex Forced';
+  const forced = await loadRoster({ fetcher, force: true, now: 1000031000 });
+  assert.equal(forced.players[0].name, 'Alex Forced');
+  failMembers = true;
+  const stale = await loadRoster({ fetcher, force: true, now: 1000032000 });
+  assert.equal(stale.stale, true);
+  assert.equal(stale.players[0].name, 'Alex Forced', 'never revert to static first names after a live failure');
+  resetRosterCache();
+  await assert.rejects(loadRoster({ fetcher, now: 1000033000 }), /live YOLO member list/);
+  resetRosterCache();
+});
+
+test('supports a members-backed app even if its static fallback roster is removed', () => {
+  const result = extractPublishedData(`const url='https://example.supabase.co',key='${token}'; function fetchMembers(){ return client.from('members').select('*') }`);
+  assert.equal(result.backend.membersTable, true);
+  assert.deepEqual(result.players, []);
+});

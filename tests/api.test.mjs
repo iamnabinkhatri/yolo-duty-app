@@ -12,7 +12,8 @@ async function fixture(t, overrides = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'yolo-duty-test-'));
   const env = { DUTY_LOCAL_FILE: join(dir, 'duties.json'), ...overrides };
   const store = createStore(env);
-  const server = http.createServer(createHandler({ env, store, roster: async () => ({ players, schedules: [], syncedAt: new Date().toISOString() }) }));
+  const rosterPlayers = players.map(p => ({ ...p }));
+  const server = http.createServer(createHandler({ env, store, roster: async () => ({ players: rosterPlayers, schedules: [], syncedAt: new Date().toISOString() }) }));
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise(resolve => server.close(resolve)); await rm(dir, { recursive: true }); });
   const request = async (path, { method = 'GET', body, headers = {} } = {}) => {
@@ -21,7 +22,7 @@ async function fixture(t, overrides = {}) {
     });
     return { status: response.status, headers: response.headers, data: await response.json() };
   };
-  return { request, store, env };
+  return { request, store, env, rosterPlayers };
 }
 const assignment = { game_date: '2026-11-12', item: 'Coffee', player_id: 'core-alex', note: 'Two flasks' };
 
@@ -100,4 +101,15 @@ test('CORS only permits explicitly configured native origins and responses never
   assert.equal(allowed.headers.get('access-control-allow-origin'), 'capacitor://localhost');
   assert.equal(Object.keys(allowed.data).some(k => /key|secret/i.test(k)), false);
   assert.equal((await request('config', { headers: { Origin: 'https://unknown.example' } })).headers.get('access-control-allow-origin'), null);
+});
+
+
+test('existing assignments display renamed members using stable source IDs without rewriting history', async t => {
+  const { request, env, rosterPlayers } = await fixture(t);
+  const created = await request('duties', { method: 'POST', body: assignment });
+  rosterPlayers[0].name = 'Alex Morgan';
+  const read = await request('duties?month=2026-11');
+  assert.equal(read.data.duties[0].player_id, created.data.duty.player_id);
+  assert.equal(read.data.duties[0].player_name, 'Alex Morgan');
+  assert.equal((await createStore(env).list('2026-11-01', '2026-12-01'))[0].player_name, 'Alex');
 });

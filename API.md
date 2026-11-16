@@ -23,9 +23,14 @@ POST/PATCH requests use `Content-Type: application/json`.
   "source": "https://yoloformation.vercel.app",
   "syncedAt": "2026-11-12T12:00:00.000Z",
   "stale": false,
-  "guestsSynced": true
+  "guestsSynced": true,
+  "membersSynced": true,
+  "refreshAfterSeconds": 30
 }
 ```
+
+`membersSynced: true` confirms names came from the original live members table.
+The visible app polls every 30 seconds; `?refresh=1` bypasses the server cache.
 
 `kind` is `member` or `guest`. Submit the exact source `id` when assigning a
 duty. `stale: true` means the last successful roster is being returned because
@@ -75,7 +80,10 @@ Response: `200 { "duty": { ... } }`. Status is `assigned` or `done`.
 Game date and item are immutable through PATCH; remove/recreate if those need
 to change. DELETE returns `200 { "deleted": true }`.
 
-GET duties returns `{ "duties": [...] }`, ordered by date then item.
+GET duties returns `{ "duties": [...], "rosterStale": false }`, ordered by
+date then item. Names are resolved by current source member ID; stored names
+remain a fallback if a player is unavailable. `rosterStale: true` indicates live
+names could not be verified, without hiding the saved assignments.
 The default month is the current month in America/New_York. Month/date strings
 are validated, including leap years and month rollover.
 
